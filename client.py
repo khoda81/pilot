@@ -1,6 +1,5 @@
 import socket
 import time
-
 import game_socket_pb2
 
 
@@ -12,17 +11,55 @@ def connect_to_server(host: str, port: int) -> socket.socket:
     return sock
 
 
-def send_tank_control(sock: socket.socket, right: float, left: float) -> None:
-    """Send tank engine control data to the server."""
-    # Create the SetEngines message
-    control_data = game_socket_pb2.SetEngines(right=right, left=left)
-    message = game_socket_pb2.ClientMessage(engines=control_data)
+def encode_varint(value: int) -> bytes:
+    """Encodes an integer as a protobuf varint (used for length-delimited)."""
+    result = []
+    while value > 127:
+        result.append((value & 0x7F) | 0x80)
+        value >>= 7
 
+    result.append(value)
+    return bytes(result)
+
+
+def send_length_delimited_message(sock: socket.socket, message):
     # Serialize the message to a binary format
     serialized_data = message.SerializeToString()
 
-    # Send the serialized data over the socket
+    # Get the length of the serialized data and encode it as varint
+    message_length = len(serialized_data)
+    length_prefix = encode_varint(message_length)
+
+    # Send the length prefix followed by the serialized data
+    sock.sendall(length_prefix)
     sock.sendall(serialized_data)
+
+
+def send_tank_control(
+    sock: socket.socket,
+    right: float,
+    left: float,
+    fire: bool = False,
+) -> None:
+    """Send tank engine control data to the server, length-delimited."""
+    # Create the SetEngines message
+    controls = game_socket_pb2.Controls(
+        right_engine=right,
+        left_engine=left,
+        fire=fire,
+    )
+
+    control_data = game_socket_pb2.ControlUpdate(player_id=0, controls=controls)
+    message = game_socket_pb2.ClientMessage(action=control_data)
+
+    send_length_delimited_message(sock, message)
+
+
+def send_spawn_request(sock: socket.socket) -> None:
+    message = game_socket_pb2.SpawnPlayerRequest()
+    message = game_socket_pb2.ClientMessage(spawn_player=message)
+
+    send_length_delimited_message(sock, message)
 
 
 def main() -> None:
@@ -32,6 +69,10 @@ def main() -> None:
 
     try:
         sock: socket.socket = connect_to_server(host, port)
+
+        send_spawn_request(sock)
+
+        #  TODO: Wait until server responds with the player that was spawned
 
         # Main control loop
         try:
