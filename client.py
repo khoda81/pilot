@@ -1,106 +1,255 @@
+import queue
 import socket
-import time
-import game_socket_pb2
+import threading
+from typing import Any, Dict, List, Optional
+
+import cv2
+import numpy as np
+import varint
+
+from game_socket_pb2 import (
+    ClientMessage,
+    ControlUpdate,
+    ObservationKind,
+    ObservationRequest,
+    PlayersListRequest,
+    ServerMessage,
+    SpawnPlayerRequest,
+    SubscriptionRequest,
+)
 
 
-def connect_to_server(host: str, port: int) -> socket.socket:
-    """Connect to the server and return the socket."""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((host, port))
-    print(f"Connected to server at {host}:{port}")
-    return sock
+def decode_image(image_message):
+    image_type = image_message.WhichOneof("image_type")
+
+    if image_type == "raw_image":
+        raw_image = image_message.raw_image
+        width, height = raw_image.width, raw_image.height
+        image_data = np.frombuffer(raw_image.data, dtype=np.uint8)
+        image = image_data.reshape((height, width, 4))  # RGBA
+        return cv2.cvtColor(image, cv2.COLOR_RGBA2BGRA)  # Convert to BGR
+
+    elif image_type == "png_image":
+        png_data = np.frombuffer(image_message.png_image.data, dtype=np.uint8)
+        return cv2.imdecode(png_data, cv2.IMREAD_COLOR)
+
+    else:
+        raise NotImplementedError(
+            f"Handling images of {image_type} is not supported yet"
+        )
 
 
-def encode_varint(value: int) -> bytes:
-    """Encodes an integer as a protobuf varint (used for length-delimited)."""
-    result = []
-    while value > 127:
-        result.append((value & 0x7F) | 0x80)
-        value >>= 7
-
-    result.append(value)
-    return bytes(result)
+class NoPlayerAssignedException(Exception): ...
 
 
-def send_length_delimited_message(sock: socket.socket, message):
-    # Serialize the message to a binary format
-    serialized_data = message.SerializeToString()
+class GameClient:
+    player_states: dict[int, dict[str, Any]]
 
-    # Get the length of the serialized data and encode it as varint
-    message_length = len(serialized_data)
-    length_prefix = encode_varint(message_length)
+    def __init__(self, address: tuple):
+        self.address = address
+        self.sock = None
+        self.lock = threading.Lock()
 
-    # Send the length prefix followed by the serialized data
-    sock.sendall(length_prefix)
-    sock.sendall(serialized_data)
+        # Player-related state tracking
+        # player_id -> {'image': ..., 'reward': ..., 'sensors': ...}
+        self.player_states = {}
+        self.assigned_players = set()  # Set of player IDs assigned to this client
 
+        # List of player IDs not currently controlled
+        self.unused_players = queue.Queue()
 
-def send_tank_control(
-    sock: socket.socket,
-    right: float,
-    left: float,
-    fire: bool = False,
-) -> None:
-    """Send tank engine control data to the server, length-delimited."""
-    # Create the SetEngines message
-    controls = game_socket_pb2.Controls(
-        right_engine=right,
-        left_engine=left,
-        fire=fire,
-    )
+        # Asynchronous message handling
+        self.running = False
+        self.receive_thread = None
+        self.message_queue = queue.Queue()
 
-    control_data = game_socket_pb2.ControlUpdate(player_id=0, controls=controls)
-    message = game_socket_pb2.ClientMessage(action=control_data)
+    def player_state(self, player_id) -> dict[str, Any]:
+        return self.player_states.setdefault(player_id, {})
 
-    send_length_delimited_message(sock, message)
+    def connect(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect(self.address)
+        self.running = True
+        self.receive_thread = threading.Thread(
+            target=read_server_messages,
+            args=(self,),
+            daemon=True,
+        )
+        self.receive_thread.start()
 
+    def __enter__(self):
+        self.connect()
+        return self
 
-def send_spawn_request(sock: socket.socket) -> None:
-    message = game_socket_pb2.SpawnPlayerRequest()
-    message = game_socket_pb2.ClientMessage(spawn_player=message)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
-    send_length_delimited_message(sock, message)
+    def close(self):
+        self.running = False
+        if self.sock:
+            self.sock.close()
 
+    def send_message(self, client_message: ClientMessage) -> None:
+        serialized_message = client_message.SerializeToString()
+        length_prefix = varint.encode(len(serialized_message))
+        self.sock.sendall(length_prefix)
+        self.sock.sendall(serialized_message)
 
-def main() -> None:
-    """Main function to control tank via the server."""
-    host: str = "127.0.0.1"  # localhost
-    port: int = 7878  # The port used by the server
+    def receive_message(self) -> Optional[ServerMessage]:
+        # length = varint.decode_stream(self.sock.makefile("rb"))
 
-    try:
-        sock: socket.socket = connect_to_server(host, port)
+        class SocketWrapper:
+            """Wrap a socket to provide a read() method compatible with varint.decode_stream()."""
 
-        send_spawn_request(sock)
+            def __init__(self, sock):
+                self.sock = sock
 
-        #  TODO: Wait until server responds with the player that was spawned
+            def read(self, num_bytes):
+                """Read a specific number of bytes from the socket."""
+                return self.sock.recv(num_bytes)
 
-        # Main control loop
+        length = varint.decode_stream(SocketWrapper(self.sock))
+        message_data = self.sock.recv(length)
+
+        if not message_data:
+            return None
+
+        server_message = ServerMessage()
+        server_message.ParseFromString(message_data)
+        return server_message
+
+    def process_server_message(self, message: ServerMessage):
+        message_type = message.WhichOneof("message")
+
+        if message_type == "player_spawned":
+            self.handle_player_spawned(message.player_spawned)
+
+        elif message_type == "player_died":
+            self.handle_player_died(message.player_died)
+
+        elif message_type == "player_assigned":
+            self.handle_player_assigned(message.player_assigned)
+
+        elif message_type == "player_list":
+            self.handle_player_list(message.player_list)
+
+        elif message_type == "observation_update":
+            self.handle_observation_update(message.observation_update)
+
+        else:
+            pass  # TODO:
+
+    def handle_player_spawned(self, player_spawned):
+        player_id = player_spawned.player_id
+        self.player_state(player_id)["alive"] = True
+
+    def handle_player_died(self, player_died):
+        player_id = player_died
+        player_state = self.player_state(player_id)
+        player_state["alive"] = False
+        player_state["assigned"] = False
+
+    def handle_player_assigned(self, player_assigned):
+        player_id = player_assigned
+        self.unused_players.put(player_id)
+        self.player_state(player_id)["assigned"] = True
+
+    def handle_player_list(self, player_list):
+        for player in player_list.players:
+            player_id = player.player_id
+        self.assigned_players.add(player_id)
+
+    def handle_observation_update(self, observation):
+        observation_kind = observation.WhichOneof("observation")
+        player_id: int = observation.player_id
+
+        player_state = self.player_state(player_id)
+
+        if observation_kind == "image":
+            player_state["image"] = decode_image(observation.image)
+
+        elif observation_kind == "reward":
+            player_state["reward"] = (
+                player_state.get("reward", 0.0) + observation.reward.reward
+            )
+
+        elif observation_kind == "sensors":
+            player_state["sensors"] = observation.sensors
+
+    # ---- Control Methods ----
+
+    def get_player(self, timeout=1.0) -> Optional[int]:
         try:
-            while True:
-                # Example: Move forward at speed 1.0, no rotation
-                send_tank_control(sock, 1.0, 0.0)
-                time.sleep(1)
+            return self.unused_players.get(block=False)
 
-                # Example: Rotate right at speed 0.5, no forward movement
-                send_tank_control(sock, 0.0, 0.5)
-                time.sleep(1)
+        except queue.Empty:
+            pass
 
-                # Example: Move backward at speed 0.7, slight left rotation
-                send_tank_control(sock, -0.7, -0.2)
-                time.sleep(1)
+        observation_request = ClientMessage(spawn_player_request=SpawnPlayerRequest())
+        self.send_message(observation_request)
 
-        except KeyboardInterrupt:
-            print("Client stopped by user")
+        try:
+            return self.unused_players.get(timeout=timeout)
+        except queue.Empty:
+            pass
 
-    except ConnectionRefusedError:
-        print(f"Could not connect to server at {host}:{port}. Is the server running?")
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    def send_controls(
+        self,
+        player_id: int,
+        controls,
+    ):
+        control_update = ClientMessage(
+            control_update=ControlUpdate(
+                player_id=player_id,
+                controls=controls,
+            )
+        )
+
+        self.send_message(control_update)
+
+    def request_observation(self, player_id: int, observation_kind: ObservationKind):
+        observation_request = ClientMessage(
+            observation_request=ObservationRequest(
+                player_id=player_id, observation_kind=observation_kind
+            )
+        )
+
+        self.send_message(observation_request)
+
+    def request_player_list(self):
+        observation_request = ClientMessage(players_list_request=PlayersListRequest())
+
+        self.send_message(observation_request)
+
+    def subscribe_to_observation(
+        self,
+        player_id: int,
+        observation_kind: ObservationKind,
+        cooldown: Optional[float] = None,
+    ):
+        subscription_request = ClientMessage(
+            subscription_request=SubscriptionRequest(
+                player_id=player_id,
+                observation_kind=observation_kind,
+                cooldown=cooldown,
+            )
+        )
+
+        self.send_message(subscription_request)
+
+
+def read_server_messages(client: GameClient):
+    try:
+        while client.running:
+            message = client.receive_message()
+            if message:
+                client.process_server_message(message)
+
+    except ConnectionAbortedError:
+        print("Connection closed!")
+
+    except ConnectionResetError:
+        print("Connection closed by the server!")
+
     finally:
-        if "sock" in locals():
-            sock.close()
-            print("Connection closed")
-
-
-if __name__ == "__main__":
-    main()
+        client.running = False

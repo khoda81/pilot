@@ -14,45 +14,45 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11game_socket.proto\x12\x0bgame_socket\"\xbe\x02\n\rClientMessage\x12,\n\x06\x61\x63tion\x18\x01 \x01(\x0b\x32\x1a.game_socket.ControlUpdateH\x00\x12\x41\n\x15subscribe_observation\x18\x02 \x01(\x0b\x32 .game_socket.SubscriptionRequestH\x00\x12\x37\n\x0cspawn_player\x18\x03 \x01(\x0b\x32\x1f.game_socket.SpawnPlayerRequestH\x00\x12\x37\n\x0clist_players\x18\x04 \x01(\x0b\x32\x1f.game_socket.PlayersListRequestH\x00\x12?\n\x14recieved_observation\x18\x05 \x01(\x0b\x32\x1f.game_socket.ObservationRequestH\x00\x42\t\n\x07message\"\xe7\x01\n\rServerMessage\x12\x35\n\x0bobservation\x18\x01 \x01(\x0b\x32\x1e.game_socket.ObservationUpdateH\x00\x12\x34\n\x0eplayer_spawned\x18\x02 \x01(\x0b\x32\x1a.game_socket.PlayerSpawnedH\x00\x12.\n\x0bplayer_died\x18\x03 \x01(\x0b\x32\x17.game_socket.PlayerDiedH\x00\x12.\n\x0bplayer_list\x18\x04 \x01(\x0b\x32\x17.game_socket.PlayerListH\x00\x42\t\n\x07message\"\x14\n\x12SpawnPlayerRequest\"\x14\n\x12PlayersListRequest\"K\n\rControlUpdate\x12\x11\n\tplayer_id\x18\x01 \x01(\x05\x12\'\n\x08\x63ontrols\x18\x02 \x01(\x0b\x32\x15.game_socket.Controls\"C\n\x08\x43ontrols\x12\x14\n\x0cright_engine\x18\x01 \x01(\x02\x12\x13\n\x0bleft_engine\x18\x02 \x01(\x02\x12\x0c\n\x04\x66ire\x18\x03 \x01(\x08\"s\n\x13SubscriptionRequest\x12\x11\n\ttarget_id\x18\x01 \x01(\x05\x12\x36\n\x10observation_kind\x18\x02 \x01(\x0e\x32\x1c.game_socket.ObservationKind\x12\x11\n\tfrequency\x18\x03 \x01(\x02\"_\n\x12ObservationRequest\x12\x11\n\ttarget_id\x18\x01 \x01(\x05\x12\x36\n\x10observation_kind\x18\x02 \x01(\x0e\x32\x1c.game_socket.ObservationKind\"\xe7\x01\n\x11ObservationUpdate\x12\x11\n\ttarget_id\x18\x01 \x01(\x05\x12\x11\n\ttimestamp\x18\x02 \x01(\x03\x12#\n\x05image\x18\x03 \x01(\x0b\x32\x12.game_socket.ImageH\x00\x12&\n\x06sensor\x18\x04 \x01(\x0b\x32\x14.game_socket.SensorsH\x00\x12)\n\x08\x63ontrols\x18\x05 \x01(\x0b\x32\x15.game_socket.ControlsH\x00\x12%\n\x06reward\x18\x06 \x01(\x0b\x32\x13.game_socket.RewardH\x00\x42\r\n\x0bobservation\"+\n\x05Image\x12\x12\n\nimage_data\x18\x01 \x01(\x0c\x12\x0e\n\x06\x66ormat\x18\x02 \x01(\t\"\t\n\x07Sensors\"8\n\x06Reward\x12\x0e\n\x06reward\x18\x01 \x01(\x02\x12\x13\n\x06reason\x18\x02 \x01(\tH\x00\x88\x01\x01\x42\t\n\x07_reason\"4\n\rPlayerSpawned\x12#\n\x06player\x18\x01 \x01(\x0b\x32\x13.game_socket.Player\"1\n\nPlayerDied\x12#\n\x06player\x18\x01 \x01(\x0b\x32\x13.game_socket.Player\"2\n\nPlayerList\x12$\n\x07players\x18\x01 \x03(\x0b\x32\x13.game_socket.Player\"\x1b\n\x06Player\x12\x11\n\tplayer_id\x18\x01 \x01(\x05*M\n\x0fObservationKind\x12\x08\n\x04NONE\x10\x00\x12\t\n\x05IMAGE\x10\x01\x12\n\n\x06SENSOR\x10\x02\x12\x0c\n\x08\x43ONTROLS\x10\x03\x12\x0b\n\x07REWARDS\x10\x04\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11game_socket.proto\x12\x0bgame_socket\"\xd4\x02\n\rClientMessage\x12\x34\n\x0e\x63ontrol_update\x18\x01 \x01(\x0b\x32\x1a.game_socket.ControlUpdateH\x00\x12@\n\x14subscription_request\x18\x02 \x01(\x0b\x32 .game_socket.SubscriptionRequestH\x00\x12?\n\x14spawn_player_request\x18\x03 \x01(\x0b\x32\x1f.game_socket.SpawnPlayerRequestH\x00\x12?\n\x14players_list_request\x18\x04 \x01(\x0b\x32\x1f.game_socket.PlayersListRequestH\x00\x12>\n\x13observation_request\x18\x05 \x01(\x0b\x32\x1f.game_socket.ObservationRequestH\x00\x42\t\n\x07message\"\xe9\x01\n\rServerMessage\x12<\n\x12observation_update\x18\x01 \x01(\x0b\x32\x1e.game_socket.ObservationUpdateH\x00\x12-\n\x0eplayer_spawned\x18\x02 \x01(\x0b\x32\x13.game_socket.PlayerH\x00\x12\x15\n\x0bplayer_died\x18\x03 \x01(\x04H\x00\x12.\n\x0bplayer_list\x18\x04 \x01(\x0b\x32\x17.game_socket.PlayerListH\x00\x12\x19\n\x0fplayer_assigned\x18\x05 \x01(\x04H\x00\x42\t\n\x07message\"\x14\n\x12SpawnPlayerRequest\"\x14\n\x12PlayersListRequest\"P\n\rControlUpdate\x12\x11\n\tplayer_id\x18\x01 \x01(\x04\x12,\n\x08\x63ontrols\x18\x02 \x01(\x0b\x32\x1a.game_socket.ControlsState\"H\n\rControlsState\x12\x14\n\x0cright_engine\x18\x01 \x01(\x02\x12\x13\n\x0bleft_engine\x18\x02 \x01(\x02\x12\x0c\n\x04\x66ire\x18\x03 \x01(\x08\"\x84\x01\n\x13SubscriptionRequest\x12\x11\n\tplayer_id\x18\x01 \x01(\x04\x12\x36\n\x10observation_kind\x18\x02 \x01(\x0e\x32\x1c.game_socket.ObservationKind\x12\x15\n\x08\x63ooldown\x18\x03 \x01(\x02H\x00\x88\x01\x01\x42\x0b\n\t_cooldown\"_\n\x12ObservationRequest\x12\x11\n\tplayer_id\x18\x01 \x01(\x04\x12\x36\n\x10observation_kind\x18\x02 \x01(\x0e\x32\x1c.game_socket.ObservationKind\"\xed\x01\n\x11ObservationUpdate\x12\x11\n\tplayer_id\x18\x01 \x01(\x04\x12\x11\n\ttimestamp\x18\x02 \x01(\x03\x12#\n\x05image\x18\x03 \x01(\x0b\x32\x12.game_socket.ImageH\x00\x12\'\n\x07sensors\x18\x04 \x01(\x0b\x32\x14.game_socket.SensorsH\x00\x12.\n\x08\x63ontrols\x18\x05 \x01(\x0b\x32\x1a.game_socket.ControlsStateH\x00\x12%\n\x06reward\x18\x06 \x01(\x0b\x32\x13.game_socket.RewardH\x00\x42\r\n\x0bobservation\"m\n\x05Image\x12*\n\traw_image\x18\x01 \x01(\x0b\x32\x15.game_socket.RawImageH\x00\x12*\n\tpng_image\x18\x02 \x01(\x0b\x32\x15.game_socket.PngImageH\x00\x42\x0c\n\nimage_type\"7\n\x08RawImage\x12\r\n\x05width\x18\x01 \x01(\r\x12\x0e\n\x06height\x18\x02 \x01(\r\x12\x0c\n\x04\x64\x61ta\x18\x03 \x01(\x0c\"\x18\n\x08PngImage\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\"\t\n\x07Sensors\"(\n\x06Reward\x12\x0e\n\x06reward\x18\x01 \x01(\x02\x12\x0e\n\x06reason\x18\x02 \x01(\t\"2\n\nPlayerList\x12$\n\x07players\x18\x01 \x03(\x0b\x32\x13.game_socket.Player\"\x1b\n\x06Player\x12\x11\n\tplayer_id\x18\x01 \x01(\x04*M\n\x0fObservationKind\x12\x08\n\x04NONE\x10\x00\x12\t\n\x05IMAGE\x10\x01\x12\n\n\x06SENSOR\x10\x02\x12\x0c\n\x08\x43ONTROLS\x10\x03\x12\x0b\n\x07REWARDS\x10\x04\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'game_socket_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_OBSERVATIONKIND']._serialized_start=1527
-  _globals['_OBSERVATIONKIND']._serialized_end=1604
+  _globals['_OBSERVATIONKIND']._serialized_start=1613
+  _globals['_OBSERVATIONKIND']._serialized_end=1690
   _globals['_CLIENTMESSAGE']._serialized_start=35
-  _globals['_CLIENTMESSAGE']._serialized_end=353
-  _globals['_SERVERMESSAGE']._serialized_start=356
-  _globals['_SERVERMESSAGE']._serialized_end=587
-  _globals['_SPAWNPLAYERREQUEST']._serialized_start=589
-  _globals['_SPAWNPLAYERREQUEST']._serialized_end=609
-  _globals['_PLAYERSLISTREQUEST']._serialized_start=611
-  _globals['_PLAYERSLISTREQUEST']._serialized_end=631
-  _globals['_CONTROLUPDATE']._serialized_start=633
-  _globals['_CONTROLUPDATE']._serialized_end=708
-  _globals['_CONTROLS']._serialized_start=710
-  _globals['_CONTROLS']._serialized_end=777
-  _globals['_SUBSCRIPTIONREQUEST']._serialized_start=779
-  _globals['_SUBSCRIPTIONREQUEST']._serialized_end=894
-  _globals['_OBSERVATIONREQUEST']._serialized_start=896
-  _globals['_OBSERVATIONREQUEST']._serialized_end=991
-  _globals['_OBSERVATIONUPDATE']._serialized_start=994
-  _globals['_OBSERVATIONUPDATE']._serialized_end=1225
-  _globals['_IMAGE']._serialized_start=1227
-  _globals['_IMAGE']._serialized_end=1270
-  _globals['_SENSORS']._serialized_start=1272
-  _globals['_SENSORS']._serialized_end=1281
-  _globals['_REWARD']._serialized_start=1283
-  _globals['_REWARD']._serialized_end=1339
-  _globals['_PLAYERSPAWNED']._serialized_start=1341
-  _globals['_PLAYERSPAWNED']._serialized_end=1393
-  _globals['_PLAYERDIED']._serialized_start=1395
-  _globals['_PLAYERDIED']._serialized_end=1444
-  _globals['_PLAYERLIST']._serialized_start=1446
-  _globals['_PLAYERLIST']._serialized_end=1496
-  _globals['_PLAYER']._serialized_start=1498
-  _globals['_PLAYER']._serialized_end=1525
+  _globals['_CLIENTMESSAGE']._serialized_end=375
+  _globals['_SERVERMESSAGE']._serialized_start=378
+  _globals['_SERVERMESSAGE']._serialized_end=611
+  _globals['_SPAWNPLAYERREQUEST']._serialized_start=613
+  _globals['_SPAWNPLAYERREQUEST']._serialized_end=633
+  _globals['_PLAYERSLISTREQUEST']._serialized_start=635
+  _globals['_PLAYERSLISTREQUEST']._serialized_end=655
+  _globals['_CONTROLUPDATE']._serialized_start=657
+  _globals['_CONTROLUPDATE']._serialized_end=737
+  _globals['_CONTROLSSTATE']._serialized_start=739
+  _globals['_CONTROLSSTATE']._serialized_end=811
+  _globals['_SUBSCRIPTIONREQUEST']._serialized_start=814
+  _globals['_SUBSCRIPTIONREQUEST']._serialized_end=946
+  _globals['_OBSERVATIONREQUEST']._serialized_start=948
+  _globals['_OBSERVATIONREQUEST']._serialized_end=1043
+  _globals['_OBSERVATIONUPDATE']._serialized_start=1046
+  _globals['_OBSERVATIONUPDATE']._serialized_end=1283
+  _globals['_IMAGE']._serialized_start=1285
+  _globals['_IMAGE']._serialized_end=1394
+  _globals['_RAWIMAGE']._serialized_start=1396
+  _globals['_RAWIMAGE']._serialized_end=1451
+  _globals['_PNGIMAGE']._serialized_start=1453
+  _globals['_PNGIMAGE']._serialized_end=1477
+  _globals['_SENSORS']._serialized_start=1479
+  _globals['_SENSORS']._serialized_end=1488
+  _globals['_REWARD']._serialized_start=1490
+  _globals['_REWARD']._serialized_end=1530
+  _globals['_PLAYERLIST']._serialized_start=1532
+  _globals['_PLAYERLIST']._serialized_end=1582
+  _globals['_PLAYER']._serialized_start=1584
+  _globals['_PLAYER']._serialized_end=1611
 # @@protoc_insertion_point(module_scope)
