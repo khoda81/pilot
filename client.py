@@ -1,7 +1,8 @@
 import queue
 import socket
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
+from warnings import warn
 
 import cv2
 import numpy as np
@@ -53,6 +54,7 @@ class GameClient:
         # Player-related state tracking
         # player_id -> {'image': ..., 'reward': ..., 'sensors': ...}
         self.player_states = {}
+        self.alive = set()
         self.assigned_players = set()  # Set of player IDs assigned to this client
 
         # List of player IDs not currently controlled
@@ -69,6 +71,8 @@ class GameClient:
     def connect(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.connect(self.address)
+        self.request_player_list()
+
         self.running = True
         self.receive_thread = threading.Thread(
             target=read_server_messages,
@@ -137,44 +141,45 @@ class GameClient:
             self.handle_observation_update(message.observation_update)
 
         else:
-            pass  # TODO:
+            print(f"Unhandled message from server: {message_type}")
 
     def handle_player_spawned(self, player_spawned):
-        player_id = player_spawned.player_id
-        self.player_state(player_id)["alive"] = True
+        self.alive.add(player_spawned.player_id)
 
-    def handle_player_died(self, player_died):
-        player_id = player_died
-        player_state = self.player_state(player_id)
-        player_state["alive"] = False
-        player_state["assigned"] = False
+    def handle_player_died(self, player_id):
+        self.alive.discard(player_id)
+        self.assigned_players.discard(player_id)
 
-    def handle_player_assigned(self, player_assigned):
-        player_id = player_assigned
+    def handle_player_assigned(self, player_id):
         self.unused_players.put(player_id)
-        self.player_state(player_id)["assigned"] = True
+        self.assigned_players.add(player_id)
 
     def handle_player_list(self, player_list):
-        for player in player_list.players:
-            player_id = player.player_id
-        self.assigned_players.add(player_id)
+        player_set = set(player.player_id for player in player_list.players)
+
+        # Players that died without us realizing
+        for player_id in self.alive - player_set:
+            warn(f"Player {player_id} died, but it was in the client's alive set")
+            self.handle_player_died(player_id)
+
+        # Players that spawned without us realizing
+        self.alive = player_set
 
     def handle_observation_update(self, observation):
         observation_kind = observation.WhichOneof("observation")
         player_id: int = observation.player_id
 
-        player_state = self.player_state(player_id)
-
         if observation_kind == "image":
-            player_state["image"] = decode_image(observation.image)
+            self.player_state(player_id)["image"] = decode_image(observation.image)
 
         elif observation_kind == "reward":
+            player_state = self.player_state(player_id)
             player_state["reward"] = (
                 player_state.get("reward", 0.0) + observation.reward.reward
             )
 
         elif observation_kind == "sensors":
-            player_state["sensors"] = observation.sensors
+            self.player_state(player_id)["sensors"] = observation.sensors
 
     # ---- Control Methods ----
 
@@ -246,10 +251,10 @@ def read_server_messages(client: GameClient):
                 client.process_server_message(message)
 
     except ConnectionAbortedError:
-        print("Connection closed!")
+        pass
 
     except ConnectionResetError:
-        print("Connection closed by the server!")
+        pass
 
     finally:
         client.running = False

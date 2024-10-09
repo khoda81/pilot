@@ -18,23 +18,19 @@ def main():
             f"Could not connect to server at {host}:{port}. Is the server running?"
         )
 
-    # 1. Request player list from the server
-    print("Requesting player list from the server")
-    client.request_player_list()
-
-    # 2. Spawn a new player
+    # 1. Spawn a new player
     print("Requesting a player to be controlled")
     player_id = client.get_player()
 
     if player_id is None:
         return print("Failed to receive a player to control, quitting!")
 
-    # 3. Subscribe to images and rewards for the spawned player
+    # 2. Subscribe to images and rewards for the spawned player
     print("Subscribing to player")
     client.subscribe_to_observation(player_id, ObservationKind.IMAGE, cooldown=0.1)
     client.subscribe_to_observation(player_id, ObservationKind.REWARDS, cooldown=0.1)
 
-    # 4. Start sending random controls, requesting new images, and displaying them in a loop
+    # 3. Start sending random controls, requesting new images, and displaying them in a loop
     try:
         while True:
             # Request the latest image
@@ -66,10 +62,12 @@ def main():
             time.sleep(0.01)
 
     except KeyboardInterrupt:
-        print("Client stopped by user")
+        print("Client stopped by user!")
+
+    except ConnectionResetError:
+        print("Connection terminated by the server!")
 
     finally:
-        print("Error occurred, quitting!")
         client.close()
         cv2.destroyAllWindows()
 
