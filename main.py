@@ -67,6 +67,9 @@ def main():
     except ConnectionResetError:
         print("Connection terminated by the server!")
 
+    except ConnectionAbortedError:
+        print("Connection terminated!")
+
     finally:
         client.close()
         cv2.destroyAllWindows()

@@ -54,7 +54,8 @@ class GameClient:
         # Player-related state tracking
         # player_id -> {'image': ..., 'reward': ..., 'sensors': ...}
         self.player_states = {}
-        self.alive = set()
+        self.alive_players = set()
+        self.dead_players = set()
         self.assigned_players = set()  # Set of player IDs assigned to this client
 
         # List of player IDs not currently controlled
@@ -143,11 +144,12 @@ class GameClient:
         else:
             print(f"Unhandled message from server: {message_type}")
 
-    def handle_player_spawned(self, player_spawned):
-        self.alive.add(player_spawned.player_id)
+    def handle_player_spawned(self, player):
+        self.alive_players.add(player.player_id)
 
     def handle_player_died(self, player_id):
-        self.alive.discard(player_id)
+        self.dead_players.add(player_id)
+        self.alive_players.discard(player_id)
         self.assigned_players.discard(player_id)
 
     def handle_player_assigned(self, player_id):
@@ -155,15 +157,10 @@ class GameClient:
         self.assigned_players.add(player_id)
 
     def handle_player_list(self, player_list):
-        player_set = set(player.player_id for player in player_list.players)
-
-        # Players that died without us realizing
-        for player_id in self.alive - player_set:
-            warn(f"Player {player_id} died, but it was in the client's alive set")
-            self.handle_player_died(player_id)
-
-        # Players that spawned without us realizing
-        self.alive = player_set
+        for player in player_list.players:
+            print(player)
+            if player.player_id not in self.dead_players:
+                self.handle_player_spawned(player)
 
     def handle_observation_update(self, observation):
         observation_kind = observation.WhichOneof("observation")
