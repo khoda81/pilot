@@ -8,15 +8,16 @@ import cv2
 import numpy as np
 import varint
 
-from game_socket_pb2 import (
+from .protobuf.game_socket_pb2 import (
     ClientMessage,
-    ControlUpdate,
     ObservationKind,
     ObservationRequest,
-    PlayersListRequest,
     ServerMessage,
-    SpawnPlayerRequest,
+    SpawnTankRequest,
     SubscriptionRequest,
+    TankControlUpdate,
+    TanksListRequest,
+    TurretControlUpdate,
 )
 
 
@@ -40,39 +41,39 @@ def decode_image(image_message):
         )
 
 
-class NoPlayerAssignedException(Exception): ...
+class NoTankAssignedException(Exception): ...
 
 
 class GameClient:
-    player_states: dict[int, dict[str, Any]]
+    entity_states: dict[int, dict[str, Any]]
 
     def __init__(self, address: tuple):
         self.address = address
         self.sock = None
         self.lock = threading.Lock()
 
-        # Player-related state tracking
-        # player_id -> {'image': ..., 'reward': ..., 'sensors': ...}
-        self.player_states = {}
-        self.alive_players = set()
-        self.dead_players = set()
-        self.assigned_players = set()  # Set of player IDs assigned to this client
+        # Tank-related state tracking
+        # tank_id -> {'image': ..., 'reward': ..., 'sensors': ...}
+        self.entity_states = {}
+        self.alive_tanks = set()
+        self.dead_tanks = set()
+        self.assigned_tanks = set()  # Set of tank IDs assigned to this client
 
-        # List of player IDs not currently controlled
-        self.unused_players = queue.Queue()
+        # List of tank IDs not currently controlled
+        self.unused_tanks = queue.Queue()
 
         # Asynchronous message handling
         self.running = False
         self.receive_thread = None
         self.message_queue = queue.Queue()
 
-    def player_state(self, player_id) -> dict[str, Any]:
-        return self.player_states.setdefault(player_id, {})
+    def entity_state(self, tank_id) -> dict[str, Any]:
+        return self.entity_states.setdefault(tank_id, {})
 
     def connect(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.connect(self.address)
-        self.request_player_list()
+        self.request_tank_list()
 
         self.running = True
         self.receive_thread = threading.Thread(
@@ -103,17 +104,19 @@ class GameClient:
     def receive_message(self) -> Optional[ServerMessage]:
         # length = varint.decode_stream(self.sock.makefile("rb"))
 
-        class SocketWrapper:
-            """Wrap a socket to provide a read() method compatible with varint.decode_stream()."""
+        shift = 0
+        length = 0
+        while True:
+            inp = self.sock.recv(1)
+            if not inp:
+                raise ConnectionAbortedError
 
-            def __init__(self, sock):
-                self.sock = sock
+            [i] = inp
+            length |= (i & 0x7F) << shift
+            shift += 7
+            if not (i & 0x80):
+                break
 
-            def read(self, num_bytes):
-                """Read a specific number of bytes from the socket."""
-                return self.sock.recv(num_bytes)
-
-        length = varint.decode_stream(SocketWrapper(self.sock))
         message_data = self.sock.recv(length)
 
         if not message_data:
@@ -126,17 +129,17 @@ class GameClient:
     def process_server_message(self, message: ServerMessage):
         message_type = message.WhichOneof("message")
 
-        if message_type == "player_spawned":
-            self.handle_player_spawned(message.player_spawned)
+        if message_type == "tank_spawned":
+            self.handle_tank_spawned(message.tank_spawned)
 
-        elif message_type == "player_died":
-            self.handle_player_died(message.player_died)
+        elif message_type == "tank_died":
+            self.handle_tank_died(message.tank_died)
 
-        elif message_type == "player_assigned":
-            self.handle_player_assigned(message.player_assigned)
+        elif message_type == "tank_assigned":
+            self.handle_tank_assigned(message.tank_assigned)
 
-        elif message_type == "player_list":
-            self.handle_player_list(message.player_list)
+        elif message_type == "tank_list":
+            self.handle_tank_list(message.tank_list)
 
         elif message_type == "observation_update":
             self.handle_observation_update(message.observation_update)
@@ -144,94 +147,110 @@ class GameClient:
         else:
             print(f"Unhandled message from server: {message_type}")
 
-    def handle_player_spawned(self, player):
-        self.alive_players.add(player.player_id)
+    def handle_tank_spawned(self, tank):
+        self.alive_tanks.add(tank.tank_id)
+        self.entity_state(tank.tank_id)["turrets"] = tank.turrets
 
-    def handle_player_died(self, player_id):
-        self.dead_players.add(player_id)
-        self.alive_players.discard(player_id)
-        self.assigned_players.discard(player_id)
+    def handle_tank_died(self, tank_id):
+        self.dead_tanks.add(tank_id)
+        self.alive_tanks.discard(tank_id)
+        self.assigned_tanks.discard(tank_id)
 
-    def handle_player_assigned(self, player_id):
-        self.unused_players.put(player_id)
-        self.assigned_players.add(player_id)
+    def handle_tank_assigned(self, tank_id):
+        self.unused_tanks.put(tank_id)
+        self.assigned_tanks.add(tank_id)
 
-    def handle_player_list(self, player_list):
-        for player in player_list.players:
-            print(player)
-            if player.player_id not in self.dead_players:
-                self.handle_player_spawned(player)
+    def handle_tank_list(self, tank_list):
+        for tank in tank_list.tanks:
+            print(tank)
+            if tank.tank_id not in self.dead_tanks:
+                self.handle_tank_spawned(tank)
 
     def handle_observation_update(self, observation):
-        observation_kind = observation.WhichOneof("observation")
-        player_id: int = observation.player_id
+        data_kind = observation.WhichOneof("observation")
+        entity: int = observation.entity
 
-        if observation_kind == "image":
-            self.player_state(player_id)["image"] = decode_image(observation.image)
+        if data_kind == "image":
+            self.entity_state(entity)[data_kind] = decode_image(observation.image)
 
-        elif observation_kind == "reward":
-            player_state = self.player_state(player_id)
-            player_state["reward"] = (
-                player_state.get("reward", 0.0) + observation.reward.reward
+        elif data_kind == "reward":
+            entity_state = self.entity_state(entity)
+            entity_state[data_kind] = (
+                entity_state.get(data_kind, 0.0) + observation.reward.reward
             )
 
-        elif observation_kind == "sensors":
-            self.player_state(player_id)["sensors"] = observation.sensors
+        elif data_kind == "sensors":
+            self.entity_state(entity)[data_kind] = observation.sensors
+
+        elif data_kind == "tank_controls":
+            self.entity_state(entity)[data_kind] = observation.tank_controls
+
+        elif data_kind == "turret_controls":
+            self.entity_state(entity)[data_kind] = observation.turret_controls
+
+        else:
+            warn(f"Unhandled observation kind: {data_kind}")
 
     # ---- Control Methods ----
 
-    def get_player(self, timeout=1.0) -> Optional[int]:
+    def get_tank(self, timeout=1.0) -> Optional[int]:
         try:
-            return self.unused_players.get(block=False)
+            return self.unused_tanks.get(block=False)
 
         except queue.Empty:
             pass
 
-        observation_request = ClientMessage(spawn_player_request=SpawnPlayerRequest())
+        observation_request = ClientMessage(spawn_tank_request=SpawnTankRequest())
         self.send_message(observation_request)
 
         try:
-            return self.unused_players.get(timeout=timeout)
+            return self.unused_tanks.get(timeout=timeout)
         except queue.Empty:
             pass
 
-    def send_controls(
-        self,
-        player_id: int,
-        controls,
-    ):
-        control_update = ClientMessage(
-            control_update=ControlUpdate(
-                player_id=player_id,
-                controls=controls,
+    def send_tank_controls(self, tank_id: int, controls):
+        self.send_message(
+            ClientMessage(
+                tank_control_update=TankControlUpdate(
+                    tank_id=tank_id,
+                    controls=controls,
+                )
             )
         )
 
-        self.send_message(control_update)
+    def send_turret_controls(self, turret_id: int, controls):
+        self.send_message(
+            ClientMessage(
+                turret_control_update=TurretControlUpdate(
+                    turret_id=turret_id,
+                    controls=controls,
+                )
+            )
+        )
 
-    def request_observation(self, player_id: int, observation_kind: ObservationKind):
+    def request_observation(self, entity: int, observation_kind: ObservationKind):
         observation_request = ClientMessage(
             observation_request=ObservationRequest(
-                player_id=player_id, observation_kind=observation_kind
+                entity=entity, observation_kind=observation_kind
             )
         )
 
         self.send_message(observation_request)
 
-    def request_player_list(self):
-        observation_request = ClientMessage(players_list_request=PlayersListRequest())
+    def request_tank_list(self):
+        observation_request = ClientMessage(tanks_list_request=TanksListRequest())
 
         self.send_message(observation_request)
 
     def subscribe_to_observation(
         self,
-        player_id: int,
+        entity: int,
         observation_kind: ObservationKind,
         cooldown: Optional[float] = None,
     ):
         subscription_request = ClientMessage(
             subscription_request=SubscriptionRequest(
-                player_id=player_id,
+                entity=entity,
                 observation_kind=observation_kind,
                 cooldown=cooldown,
             )
