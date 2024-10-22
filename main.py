@@ -3,7 +3,7 @@ import time
 
 import cv2
 
-from src.client import GameClient, ObservationKind
+from src.client import Entity, GameClient, ObservationKind
 
 
 def main():
@@ -26,7 +26,7 @@ def main():
         return print("Failed to receive a tank to control, quitting!")
 
     # 2. Subscribe to images and rewards for the spawned tank
-    print(f"Subscribing to tank {tank_id=}")
+    print(f"Subscribing to tank {Entity(tank_id)}")
     client.subscribe_to_observation(tank_id, ObservationKind.IMAGE, cooldown=0.1)
     client.subscribe_to_observation(tank_id, ObservationKind.REWARDS, cooldown=0.1)
     client.subscribe_to_observation(
@@ -34,7 +34,7 @@ def main():
     )
 
     for turret in client.entity_state(tank_id).get("turrets", []):
-        print("Subscribing to turret", turret)
+        print(f"Subscribing to turret {Entity(turret.turret_id)}")
         client.subscribe_to_observation(
             turret.turret_id, ObservationKind.TURRET_CONTROLS, cooldown=0.1
         )
@@ -44,6 +44,8 @@ def main():
         while True:
             # Request the latest image
             client.request_observation(tank_id, ObservationKind.IMAGE)
+            client.request_observation(tank_id, ObservationKind.POSITION)
+            client.request_observation(tank_id, ObservationKind.ROTATION)
 
             # Send random controls
             if random.random() < 0.01:
@@ -55,12 +57,6 @@ def main():
                 client.send_tank_controls(tank_id, controls)
 
             for turret in client.entity_state(tank_id).get("turrets", []):
-                turret_controls = client.entity_state(turret.turret_id).get(
-                    "turret_controls", None
-                )
-                if turret_controls is not None:
-                    print("Turret controls:", turret_controls)
-
                 if random.random() < 0.01:
                     controls = {
                         "rotation_speed": random.uniform(-1, 1),
@@ -70,16 +66,12 @@ def main():
                     client.send_turret_controls(turret.turret_id, controls)
 
             # Show latest image
-
             image = client.entity_state(tank_id).get("image")
             if image is not None:
                 cv2.imshow(f"Player #{tank_id:160x}", image)
                 key = cv2.waitKey(1)  # Refresh the window to update the image
                 if key == 27:
                     break
-
-            else:
-                print("Player image was not set, skipping")
 
             if reward := client.entity_state(tank_id).pop("reward", 0.0):
                 print("New reward:", reward)

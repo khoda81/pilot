@@ -7,6 +7,7 @@ from warnings import warn
 import cv2
 import numpy as np
 import varint
+from attr import dataclass
 
 from .protobuf.game_socket_pb2 import (
     ClientMessage,
@@ -39,6 +40,20 @@ def decode_image(image_message):
         raise NotImplementedError(
             f"Handling images of {image_type} is not supported yet"
         )
+
+
+@dataclass
+class Entity:
+    entity: int
+
+    def index(self) -> int:
+        return self.entity & ((1 << 32) - 1)
+
+    def generation(self) -> int:
+        return self.entity >> 32
+
+    def __str__(self):
+        return f"{self.index()}v{self.generation()}"
 
 
 class NoTankAssignedException(Exception): ...
@@ -162,7 +177,6 @@ class GameClient:
 
     def handle_tank_list(self, tank_list):
         for tank in tank_list.tanks:
-            print(tank)
             if tank.tank_id not in self.dead_tanks:
                 self.handle_tank_spawned(tank)
 
@@ -179,17 +193,16 @@ class GameClient:
                 entity_state.get(data_kind, 0.0) + observation.reward.reward
             )
 
-        elif data_kind == "sensors":
-            self.entity_state(entity)[data_kind] = observation.sensors
-
-        elif data_kind == "tank_controls":
-            self.entity_state(entity)[data_kind] = observation.tank_controls
-
-        elif data_kind == "turret_controls":
-            self.entity_state(entity)[data_kind] = observation.turret_controls
-
         else:
-            warn(f"Unhandled observation kind: {data_kind}")
+            if data_kind not in [
+                "tank_controls",
+                "turret_controls",
+                "position",
+                "rotation_in_radians",
+            ]:
+                warn(f"Unexpected observation kind: {data_kind}")
+
+            self.entity_state(entity)[data_kind] = getattr(observation, data_kind)
 
     # ---- Control Methods ----
 
