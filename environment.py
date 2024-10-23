@@ -10,7 +10,7 @@ import client
 
 class TankwarsEnv(gym.Env):
 
-    def __init__(self, client):
+    def __init__(self, client: client.GameClient):
         self.client = client
         self.observation_space = Box(0, 255, shape=(200, 200, 3), dtype=np.uint8)
         self.action_space = Dict({
@@ -32,8 +32,8 @@ class TankwarsEnv(gym.Env):
             raise Exception("Failed to receive a player to control, quitting!")
 
         # 2. Subscribe to images and rewards for the spawned player
-        self.client.subscribe_to_observation(player_id, self.client.ObservationKind.IMAGE, cooldown=0.1)
-        self.client.subscribe_to_observation(player_id, self.client.ObservationKind.REWARDS, cooldown=0.1)
+        self.client.subscribe_to_observation(player_id, client.ObservationKind.IMAGE, cooldown=0.1)
+        self.client.subscribe_to_observation(player_id, client.ObservationKind.REWARDS, cooldown=0.1)
 
         return player_id
 
