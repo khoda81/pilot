@@ -57,7 +57,9 @@ class TankwarsEnv(gym.Env):
         cv2.imshow(f"Player #{player_id:160x}", image)
         cv2.waitKey(1)
 
-    gym.register(
-        id="gymnasium_env/Tankwars-v0",
-        entry_point=TankwarsEnv,
-    )
+
+gym.register(
+    id="gymnasium_env/Tankwars-v0",
+    entry_point=TankwarsEnv,
+    nondeterministic=True,
+)
