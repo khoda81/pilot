@@ -1,7 +1,7 @@
 from typing import Optional
 import numpy as np
 import gymnasium as gym
-from gymnasium.spaces import OneOf, Box, Dict
+from gymnasium.spaces import Box, Dict
 import client
 import cv2
 
@@ -14,7 +14,7 @@ class TankwarsEnv(gym.Env):
         self.action_space = Dict({
             "right_engine": Box(-1, 1, shape=(1,), dtype=np.float32),
             "left_engine": Box(-1, 1, shape=(1,), dtype=np.float32),
-            "fire": OneOf(True, False),
+            "fire": Box(np.array(False), np.array(True), shape=(), dtype=bool),
         })
 
     def get_state(self, player_id):
@@ -53,6 +53,7 @@ class TankwarsEnv(gym.Env):
 
         if image is None:
             image = cv2.imread('./no_img.jpg')
+            image = cv2.resize(image, (200, 200))
 
         cv2.imshow(f"Player #{player_id:160x}", image)
         cv2.waitKey(1)
