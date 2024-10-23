@@ -1,9 +1,11 @@
 from typing import Optional
-import numpy as np
-import gymnasium as gym
-from gymnasium.spaces import OneOf, Box, Dict
-import client
+
 import cv2
+import gymnasium as gym
+import numpy as np
+from gymnasium.spaces import Box, Dict, OneOf
+
+import client
 
 
 class TankwarsEnv(gym.Env):
@@ -17,24 +19,21 @@ class TankwarsEnv(gym.Env):
             "fire": OneOf(True, False),
         })
 
-    def get_state(self, player_id):
-        self.client.request_observation(player_id, self.client.ObservationKind.IMAGE)
-        return self.client.player_state(player_id)
-
     def get_info(self):
         return {}
 
     def reset(self, seed=None):
-        # super().reset(seed=seed)
+        super().reset(seed=seed)
 
-        player_id = client.get_player()
+        player_id = self.client.get_player()
 
         if player_id is None:
+            # TODO: Custom exception class for 
             raise Exception("Failed to receive a player to control, quitting!")
 
         # 2. Subscribe to images and rewards for the spawned player
-        client.subscribe_to_observation(player_id, self.client.ObservationKind.IMAGE, cooldown=0.1)
-        client.subscribe_to_observation(player_id, self.client.ObservationKind.REWARDS, cooldown=0.1)
+        self.client.subscribe_to_observation(player_id, self.client.ObservationKind.IMAGE, cooldown=0.1)
+        self.client.subscribe_to_observation(player_id, self.client.ObservationKind.REWARDS, cooldown=0.1)
 
         return player_id
 
@@ -52,6 +51,7 @@ class TankwarsEnv(gym.Env):
         image = player_state.get("image")
 
         if image is None:
+            # PERF: Load the image once, instead of every frame
             image = cv2.imread('./no_img.jpg')
 
         cv2.imshow(f"Player #{player_id:160x}", image)
