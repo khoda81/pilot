@@ -26,6 +26,8 @@ def main():
     # 3. Start sending random controls, requesting new images, and displaying them in a loop
     try:
         while True:
+            player_state = client.entity_state(player_id)
+
             # Send random controls
             controls = env.action_space.sample()
             player_state, reward, terminated, truncated, info = env.step(
