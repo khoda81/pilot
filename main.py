@@ -20,21 +20,14 @@ def main():
         )
 
     env = gym.make("gymnasium_env/Tankwars-v0", client)
-    player_id = env.reset()
+    obs, info = env.reset()
 
     # 3. Start sending random controls, requesting new images, and displaying them in a loop
     try:
         while True:
-            player_state = client.entity_state(player_id)
-
             # Send random controls
-            controls = env.action_space.sample()
-            player_state, reward, terminated, truncated, info = env.step(
-                player_id, controls
-            )
-
-            # Show latest image
-            env.render(player_id, player_state)
+            action = env.action_space.sample()
+            obs, reward, terminated, truncated, info = env.step(action)
 
             print("New reward:", reward)
 
