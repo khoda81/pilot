@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tankwar-env"
+version = "0.1.0"
+description = "A gymnasium client for tankwars environment"
+authors = [
+    { name = "Mahdi Khodabandeh", email = "20.mahdikh.0@gmail.com" }
+]
+dependencies = [
+    "gymnasium",
+    "numpy",
+    "protobuf",
+]
+
+[tool.setuptools]
+packages = {find = {where = ["src"]}}
+
+[tool.setuptools.package-data]
+"tankwar_env" = ["assets/*.jpg"]

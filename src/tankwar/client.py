@@ -1,25 +1,14 @@
 import queue
 import socket
 import threading
-from typing import Any, Optional
+from typing import Any, Mapping
 from warnings import warn
 
 import cv2
 import numpy as np
-import varint
 from attr import dataclass
 
-from .protobuf.game_socket_pb2 import (
-    ClientMessage,
-    ObservationKind,
-    ObservationRequest,
-    ServerMessage,
-    SpawnTankRequest,
-    SubscriptionRequest,
-    TankControlUpdate,
-    TanksListRequest,
-    TurretControlUpdate,
-)
+from .protobuf.game_socket_pb2 import *
 
 
 def decode_image(image_message):
@@ -62,9 +51,9 @@ class NoTankAssignedException(Exception): ...
 class GameClient:
     entity_states: dict[int, dict[str, Any]]
 
-    def __init__(self, address: tuple):
+    def __init__(self, address=("localhost", 7878)):
         self.address = address
-        self.sock = None
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.lock = threading.Lock()
 
         # Tank-related state tracking
@@ -86,7 +75,6 @@ class GameClient:
         return self.entity_states.setdefault(tank_id, {})
 
     def connect(self):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.connect(self.address)
         self.request_tank_list()
 
@@ -107,18 +95,23 @@ class GameClient:
 
     def close(self):
         self.running = False
-        if self.sock:
-            self.sock.close()
+        self.sock.close()
 
     def send_message(self, client_message: ClientMessage) -> None:
         serialized_message = client_message.SerializeToString()
-        length_prefix = varint.encode(len(serialized_message))
-        self.sock.sendall(length_prefix)
+        varint_buf = []
+
+        number = len(serialized_message)
+        while number >> 7:
+            varint_buf.append(number & 0x7F | 0x80)
+            number >>= 7
+
+        varint_buf.append(number)
+
+        self.sock.sendall(bytes(varint_buf))
         self.sock.sendall(serialized_message)
 
-    def receive_message(self) -> Optional[ServerMessage]:
-        # length = varint.decode_stream(self.sock.makefile("rb"))
-
+    def receive_message(self) -> ServerMessage | None:
         shift = 0
         length = 0
         while True:
@@ -137,32 +130,28 @@ class GameClient:
         if not message_data:
             return None
 
-        server_message = ServerMessage()
-        server_message.ParseFromString(message_data)
-        return server_message
+        return ServerMessage.FromString(message_data)
 
     def process_server_message(self, message: ServerMessage):
-        message_type = message.WhichOneof("message")
-
-        if message_type == "tank_spawned":
+        if message.HasField("tank_spawned"):
             self.handle_tank_spawned(message.tank_spawned)
 
-        elif message_type == "tank_died":
+        elif message.HasField("tank_died"):
             self.handle_tank_died(message.tank_died)
 
-        elif message_type == "tank_assigned":
+        elif message.HasField("tank_assigned"):
             self.handle_tank_assigned(message.tank_assigned)
 
-        elif message_type == "tank_list":
+        elif message.HasField("tank_list"):
             self.handle_tank_list(message.tank_list)
 
-        elif message_type == "observation_update":
+        elif message.HasField("observation_update"):
             self.handle_observation_update(message.observation_update)
 
         else:
-            print(f"Unhandled message from server: {message_type}")
+            print(f"Unhandled message from server: {message}")
 
-    def handle_tank_spawned(self, tank):
+    def handle_tank_spawned(self, tank: Tank):
         self.alive_tanks.add(tank.tank_id)
         self.entity_state(tank.tank_id)["turrets"] = tank.turrets
 
@@ -175,23 +164,21 @@ class GameClient:
         self.unused_tanks.put(tank_id)
         self.assigned_tanks.add(tank_id)
 
-    def handle_tank_list(self, tank_list):
+    def handle_tank_list(self, tank_list: TankList):
         for tank in tank_list.tanks:
             if tank.tank_id not in self.dead_tanks:
                 self.handle_tank_spawned(tank)
 
-    def handle_observation_update(self, observation):
-        data_kind = observation.WhichOneof("observation")
-        entity: int = observation.entity
+    def handle_observation_update(self, update: ObservationUpdate):
+        data_kind = update.WhichOneof("observation")
 
         if data_kind == "image":
-            self.entity_state(entity)[data_kind] = decode_image(observation.image)
+            self.entity_state(update.entity)[data_kind] = decode_image(update.image)
 
         elif data_kind == "reward":
-            entity_state = self.entity_state(entity)
-            entity_state[data_kind] = (
-                entity_state.get(data_kind, 0.0) + observation.reward.reward
-            )
+            entity_state = self.entity_state(update.entity)
+            accumulated_reward = entity_state.get(data_kind, 0.0)
+            entity_state[data_kind] = accumulated_reward + update.reward.reward
 
         else:
             if data_kind not in [
@@ -202,26 +189,29 @@ class GameClient:
             ]:
                 warn(f"Unexpected observation kind: {data_kind}")
 
-            self.entity_state(entity)[data_kind] = getattr(observation, data_kind)
+            self.entity_state(update.entity)[data_kind] = getattr(update, data_kind)
 
     # ---- Control Methods ----
 
-    def get_tank(self, timeout=1.0) -> Optional[int]:
+    def get_tank(self, timeout=1.0) -> int | None:
         try:
             return self.unused_tanks.get(block=False)
 
         except queue.Empty:
             pass
 
-        observation_request = ClientMessage(spawn_tank_request=SpawnTankRequest())
-        self.send_message(observation_request)
+        self.send_message(ClientMessage(spawn_tank_request=SpawnTankRequest()))
 
         try:
             return self.unused_tanks.get(timeout=timeout)
         except queue.Empty:
             pass
 
-    def send_tank_controls(self, tank_id: int, controls):
+    def send_tank_controls(
+        self,
+        tank_id: int,
+        controls: TankControlState | Mapping | None,
+    ):
         self.send_message(
             ClientMessage(
                 tank_control_update=TankControlUpdate(
@@ -242,34 +232,32 @@ class GameClient:
         )
 
     def request_observation(self, entity: int, observation_kind: ObservationKind):
-        observation_request = ClientMessage(
-            observation_request=ObservationRequest(
-                entity=entity, observation_kind=observation_kind
+        self.send_message(
+            ClientMessage(
+                observation_request=ObservationRequest(
+                    entity=entity, observation_kind=observation_kind
+                )
             )
         )
 
-        self.send_message(observation_request)
-
     def request_tank_list(self):
-        observation_request = ClientMessage(tanks_list_request=TanksListRequest())
-
-        self.send_message(observation_request)
+        self.send_message(ClientMessage(tanks_list_request=TanksListRequest()))
 
     def subscribe_to_observation(
         self,
         entity: int,
         observation_kind: ObservationKind,
-        cooldown: Optional[float] = None,
+        cooldown: float | None = 0.0,
     ):
-        subscription_request = ClientMessage(
-            subscription_request=SubscriptionRequest(
-                entity=entity,
-                observation_kind=observation_kind,
-                cooldown=cooldown,
+        self.send_message(
+            ClientMessage(
+                subscription_request=SubscriptionRequest(
+                    entity=entity,
+                    observation_kind=observation_kind,
+                    cooldown=cooldown,
+                )
             )
         )
-
-        self.send_message(subscription_request)
 
 
 def read_server_messages(client: GameClient):

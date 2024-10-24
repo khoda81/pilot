@@ -1,11 +1,10 @@
 import math
-from typing import Optional, Union
 
 import numpy as np
 
 
 class DynamicArray:
-    def __init__(self, *, maxlen: Optional[int] = None) -> None:
+    def __init__(self, *, maxlen: int | None = None) -> None:
         self.maxlen = math.inf if maxlen is None else maxlen
         self.buffer = None
         self.tail = 0
@@ -66,14 +65,14 @@ class DynamicArray:
 
 
 class UpdateBuffer:
-    def __init__(self, *, capacity: Optional[int] = None):
+    def __init__(self, *, capacity: int | None = None):
         self.updates = DynamicArray(maxlen=capacity)
 
     @property
     def buffer(self):
         return self.updates.buffer
 
-    def append(self, timestamp: Union[int, np.ndarray], data: np.ndarray):
+    def append(self, timestamp: int | np.ndarray, data: np.ndarray):
         sample = np.array(
             (timestamp, data),
             dtype=[("timestamp", np.int32), ("data", data.dtype, data.shape)],
