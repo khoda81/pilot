@@ -16,8 +16,9 @@ class TankwarsEnv(gym.Env):
         self.action_space = Dict({
             "right_engine": Box(-1, 1, shape=(1,), dtype=np.float32),
             "left_engine": Box(-1, 1, shape=(1,), dtype=np.float32),
-            "fire": OneOf(True, False),
+            "fire": Box(np.array(False), np.array(True), shape=(), dtype=bool),
         })
+        self.no_signal_img = cv2.resize(cv2.imread('./no_img.jpg'), (200, 200))
 
     def get_info(self):
         return {}
@@ -52,7 +53,7 @@ class TankwarsEnv(gym.Env):
 
         if image is None:
             # PERF: Load the image once, instead of every frame
-            image = cv2.imread('./no_img.jpg')
+            image = self.no_signal_img
 
         cv2.imshow(f"Player #{player_id:160x}", image)
         cv2.waitKey(1)
