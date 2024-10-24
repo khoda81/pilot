@@ -71,8 +71,8 @@ class GameClient:
         self.receive_thread = None
         self.message_queue = queue.Queue()
 
-    def entity_state(self, tank_id) -> dict[str, Any]:
-        return self.entity_states.setdefault(tank_id, {})
+    def entity_state(self, entity: int) -> dict[str, Any]:
+        return self.entity_states.setdefault(entity, {})
 
     def connect(self):
         self.sock.connect(self.address)
@@ -155,7 +155,7 @@ class GameClient:
         self.alive_tanks.add(tank.tank_id)
         self.entity_state(tank.tank_id)["turrets"] = tank.turrets
 
-    def handle_tank_died(self, tank_id):
+    def handle_tank_died(self, tank_id: int):
         self.dead_tanks.add(tank_id)
         self.alive_tanks.discard(tank_id)
         self.assigned_tanks.discard(tank_id)
@@ -221,7 +221,7 @@ class GameClient:
             )
         )
 
-    def send_turret_controls(self, turret_id: int, controls):
+    def send_turret_controls(self, turret_id: int, controls: TurretControlState):
         self.send_message(
             ClientMessage(
                 turret_control_update=TurretControlUpdate(

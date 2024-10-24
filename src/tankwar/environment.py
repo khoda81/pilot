@@ -51,7 +51,8 @@ class TankwarEnv(gym.Env):
         self.action_space = Dict(
             right_engine=Box(-1, 1, shape=(), dtype=np.float32),
             left_engine=Box(-1, 1, shape=(), dtype=np.float32),
-            fire=Box(np.array(False), np.array(True), shape=(), dtype=bool),
+            turret_rotation=Box(-1, 1, shape=(), dtype=np.float32),
+            firing=Box(np.array(False), np.array(True), shape=(), dtype=bool),
         )
 
         img_path = importlib.resources.files("tankwar.assets").joinpath("no_signal.jpg")
@@ -67,21 +68,22 @@ class TankwarEnv(gym.Env):
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         super().reset(seed=seed)
+        # TODO: Send a player kill request for the current tank (if any)
 
         self.agent_id = self.client.get_tank()
 
-        # If the clients fails to acquire a tank, it returns None
         if self.agent_id is None:
             raise TankwarEnvException("Failed to receive a tank to control, quitting!")
 
         # Subscribe to images and rewards for the spawned player
         if self.render_mode is not None:
-            # fmt: off
-            self.client.subscribe_to_observation(self.agent_id, client.ObservationKind.IMAGE)
+            self.client.subscribe_to_observation(
+                self.agent_id, client.ObservationKind.IMAGE
+            )
 
-        # fmt: off
-        self.client.subscribe_to_observation(self.agent_id, client.ObservationKind.REWARDS)
-        # fmt: on
+        self.client.subscribe_to_observation(
+            self.agent_id, client.ObservationKind.REWARDS
+        )
 
         observation = self._get_obs()
         info = self._get_info()
@@ -97,12 +99,21 @@ class TankwarEnv(gym.Env):
             right_engine=float(action["right_engine"]),
         )
 
+        turret_controls = client.TurretControlState(
+            count=int(action["firing"]),
+            rotation_speed=float(action["turret_rotation"]),
+        )
+
         self.client.send_tank_controls(self.agent_id, tank_control)
 
         if self.render_mode is not None:
             self.client.request_observation(self.agent_id, client.ObservationKind.IMAGE)
 
-        # TODO: Send the fire control
+        agent_state = self.client.entity_state(self.agent_id)
+        turrets: list[client.Turret] = agent_state.get("turrets", [])
+
+        for turret in turrets:
+            self.client.send_turret_controls(turret.turret_id, turret_controls)
 
         terminated = False
         truncated = False
@@ -120,18 +131,32 @@ class TankwarEnv(gym.Env):
             return self._get_image_array()
 
         elif self.render_mode == "human":
-            image = self._get_obs()
+            image = self._get_image_array()
             # TODO: Switch to pygame for rendering
-            cv2.imshow(f"Player #{client.Entity(self.agent_id)}", image)
+
+            window_name = f"Player #{client.Entity(self.agent_id)}"
+            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+
+            width, height, *_ = image.shape
+            scale = max(600 // width, 1)
+
+            resized_image = cv2.resize(
+                image,
+                (width * scale, height * scale),
+                interpolation=cv2.INTER_NEAREST,
+            )
+
+            cv2.imshow(window_name, resized_image)
             cv2.waitKey(1)
 
     def close(self):
         # TODO: Send a player kill request for tank
         # TODO: Close the opencv window
+        cv2.destroyAllWindows()
         return super().close()
 
     def _get_obs(self):
         return self._get_image_array()
 
-    def _get_image_array(self):
+    def _get_image_array(self) -> np.ndarray:
         return self.client.entity_state(self.agent_id).get("image", self.no_signal_img)
