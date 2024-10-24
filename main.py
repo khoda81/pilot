@@ -3,7 +3,7 @@ import time
 import cv2
 import gymnasium as gym
 
-import environment
+import src.environment
 from src.client import Entity, GameClient, ObservationKind
 
 
