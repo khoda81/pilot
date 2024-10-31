@@ -26,7 +26,7 @@ POSITION: ObservationKind
 ROTATION: ObservationKind
 
 class ClientMessage(_message.Message):
-    __slots__ = ("tank_control_update", "subscription_request", "spawn_tank_request", "tanks_list_request", "observation_request", "kill_tank_request", "turret_control_update")
+    __slots__ = ("tank_control_update", "subscription_request", "spawn_tank_request", "tanks_list_request", "observation_request", "kill_tank_request", "turret_control_update", "ball_list_request")
     TANK_CONTROL_UPDATE_FIELD_NUMBER: _ClassVar[int]
     SUBSCRIPTION_REQUEST_FIELD_NUMBER: _ClassVar[int]
     SPAWN_TANK_REQUEST_FIELD_NUMBER: _ClassVar[int]
@@ -34,6 +34,7 @@ class ClientMessage(_message.Message):
     OBSERVATION_REQUEST_FIELD_NUMBER: _ClassVar[int]
     KILL_TANK_REQUEST_FIELD_NUMBER: _ClassVar[int]
     TURRET_CONTROL_UPDATE_FIELD_NUMBER: _ClassVar[int]
+    BALL_LIST_REQUEST_FIELD_NUMBER: _ClassVar[int]
     tank_control_update: TankControlUpdate
     subscription_request: SubscriptionRequest
     spawn_tank_request: SpawnTankRequest
@@ -41,7 +42,8 @@ class ClientMessage(_message.Message):
     observation_request: ObservationRequest
     kill_tank_request: KillTankRequest
     turret_control_update: TurretControlUpdate
-    def __init__(self, tank_control_update: _Optional[_Union[TankControlUpdate, _Mapping]] = ..., subscription_request: _Optional[_Union[SubscriptionRequest, _Mapping]] = ..., spawn_tank_request: _Optional[_Union[SpawnTankRequest, _Mapping]] = ..., tanks_list_request: _Optional[_Union[TanksListRequest, _Mapping]] = ..., observation_request: _Optional[_Union[ObservationRequest, _Mapping]] = ..., kill_tank_request: _Optional[_Union[KillTankRequest, _Mapping]] = ..., turret_control_update: _Optional[_Union[TurretControlUpdate, _Mapping]] = ...) -> None: ...
+    ball_list_request: BallsListRequest
+    def __init__(self, tank_control_update: _Optional[_Union[TankControlUpdate, _Mapping]] = ..., subscription_request: _Optional[_Union[SubscriptionRequest, _Mapping]] = ..., spawn_tank_request: _Optional[_Union[SpawnTankRequest, _Mapping]] = ..., tanks_list_request: _Optional[_Union[TanksListRequest, _Mapping]] = ..., observation_request: _Optional[_Union[ObservationRequest, _Mapping]] = ..., kill_tank_request: _Optional[_Union[KillTankRequest, _Mapping]] = ..., turret_control_update: _Optional[_Union[TurretControlUpdate, _Mapping]] = ..., ball_list_request: _Optional[_Union[BallsListRequest, _Mapping]] = ...) -> None: ...
 
 class SpawnTankRequest(_message.Message):
     __slots__ = ()
@@ -54,6 +56,10 @@ class KillTankRequest(_message.Message):
     def __init__(self, tank_id: _Optional[int] = ...) -> None: ...
 
 class TanksListRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class BallsListRequest(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
@@ -108,18 +114,20 @@ class ObservationRequest(_message.Message):
     def __init__(self, entity: _Optional[int] = ..., observation_kind: _Optional[_Union[ObservationKind, str]] = ...) -> None: ...
 
 class ServerMessage(_message.Message):
-    __slots__ = ("observation_update", "tank_spawned", "tank_died", "tank_list", "tank_assigned")
+    __slots__ = ("observation_update", "tank_spawned", "tank_died", "tank_list", "tank_assigned", "ball_list")
     OBSERVATION_UPDATE_FIELD_NUMBER: _ClassVar[int]
     TANK_SPAWNED_FIELD_NUMBER: _ClassVar[int]
     TANK_DIED_FIELD_NUMBER: _ClassVar[int]
     TANK_LIST_FIELD_NUMBER: _ClassVar[int]
     TANK_ASSIGNED_FIELD_NUMBER: _ClassVar[int]
+    BALL_LIST_FIELD_NUMBER: _ClassVar[int]
     observation_update: ObservationUpdate
     tank_spawned: Tank
     tank_died: int
     tank_list: TankList
     tank_assigned: int
-    def __init__(self, observation_update: _Optional[_Union[ObservationUpdate, _Mapping]] = ..., tank_spawned: _Optional[_Union[Tank, _Mapping]] = ..., tank_died: _Optional[int] = ..., tank_list: _Optional[_Union[TankList, _Mapping]] = ..., tank_assigned: _Optional[int] = ...) -> None: ...
+    ball_list: BallList
+    def __init__(self, observation_update: _Optional[_Union[ObservationUpdate, _Mapping]] = ..., tank_spawned: _Optional[_Union[Tank, _Mapping]] = ..., tank_died: _Optional[int] = ..., tank_list: _Optional[_Union[TankList, _Mapping]] = ..., tank_assigned: _Optional[int] = ..., ball_list: _Optional[_Union[BallList, _Mapping]] = ...) -> None: ...
 
 class ObservationUpdate(_message.Message):
     __slots__ = ("entity", "timestamp", "image", "sensors", "tank_controls", "reward", "turret_controls", "position", "rotation_in_radians")
@@ -206,3 +214,15 @@ class Turret(_message.Message):
     TURRET_ID_FIELD_NUMBER: _ClassVar[int]
     turret_id: int
     def __init__(self, turret_id: _Optional[int] = ...) -> None: ...
+
+class BallList(_message.Message):
+    __slots__ = ("balls",)
+    BALLS_FIELD_NUMBER: _ClassVar[int]
+    balls: _containers.RepeatedCompositeFieldContainer[Ball]
+    def __init__(self, balls: _Optional[_Iterable[_Union[Ball, _Mapping]]] = ...) -> None: ...
+
+class Ball(_message.Message):
+    __slots__ = ("ball_id",)
+    BALL_ID_FIELD_NUMBER: _ClassVar[int]
+    ball_id: int
+    def __init__(self, ball_id: _Optional[int] = ...) -> None: ...

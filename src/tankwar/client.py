@@ -59,6 +59,7 @@ class GameClient:
         # Tank-related state tracking
         # tank_id -> {'image': ..., 'reward': ..., 'sensors': ...}
         self.entity_states = {}
+        self.balls = {}
         self.alive_tanks = set()
         self.dead_tanks = set()
         self.assigned_tanks = set()  # Set of tank IDs assigned to this client
@@ -77,6 +78,7 @@ class GameClient:
     def connect(self):
         self.sock.connect(self.address)
         self.request_tank_list()
+        self.request_ball_list()
 
         self.running = True
         self.receive_thread = threading.Thread(
@@ -145,6 +147,9 @@ class GameClient:
         elif message.HasField("tank_list"):
             self.handle_tank_list(message.tank_list)
 
+        elif message.HasField("ball_list"):
+            self.handle_ball_list(message.ball_list)
+
         elif message.HasField("observation_update"):
             self.handle_observation_update(message.observation_update)
 
@@ -168,6 +173,9 @@ class GameClient:
         for tank in tank_list.tanks:
             if tank.tank_id not in self.dead_tanks:
                 self.handle_tank_spawned(tank)
+
+    def handle_ball_list(self, ball_list: BallList):
+        self.balls = {ball.ball_id: ball for ball in ball_list.balls}
 
     def handle_observation_update(self, update: ObservationUpdate):
         data_kind = update.WhichOneof("observation")
@@ -231,7 +239,7 @@ class GameClient:
             )
         )
 
-    def request_observation(self, entity: int, observation_kind: ObservationKind):
+    def request_update(self, entity: int, observation_kind: ObservationKind):
         self.send_message(
             ClientMessage(
                 observation_request=ObservationRequest(
@@ -243,7 +251,10 @@ class GameClient:
     def request_tank_list(self):
         self.send_message(ClientMessage(tanks_list_request=TanksListRequest()))
 
-    def subscribe_to_observation(
+    def request_ball_list(self):
+        self.send_message(ClientMessage(ball_list_request=BallsListRequest()))
+
+    def subscribe(
         self,
         entity: int,
         observation_kind: ObservationKind,

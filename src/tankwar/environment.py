@@ -27,11 +27,14 @@ class TankwarEnvException(Exception):
 
 class TankwarEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"]}
+    observation_space: gym.spaces.Dict
+    action_space: gym.spaces.Dict
 
     def __init__(
         self,
         client: client.GameClient | None = None,
         render_mode: str | None = None,
+        ball_id: int | None = None,
     ):
         super().__init__()
 
@@ -47,7 +50,19 @@ class TankwarEnv(gym.Env):
 
         from gymnasium.spaces import Box, Dict
 
-        self.observation_space = Box(0, 255, shape=(200, 200, 3), dtype=np.uint8)
+        position = Box(-np.inf, np.inf, shape=(2,), dtype=np.float32)
+        image = Box(0, 255, shape=(200, 200, 3), dtype=np.uint8)
+
+        self.observation_space = Dict(
+            player_pov=image,
+            player_position=position,
+            player_rotation=Box(-np.inf, np.inf, shape=(), dtype=np.float32),
+        )
+
+        self.ball_id = ball_id
+        if self.ball_id is not None:
+            self.observation_space["ball_position"] = position
+
         self.action_space = Dict(
             right_engine=Box(-1, 1, shape=(), dtype=np.float32),
             left_engine=Box(-1, 1, shape=(), dtype=np.float32),
@@ -70,20 +85,16 @@ class TankwarEnv(gym.Env):
         super().reset(seed=seed)
         # TODO: Send a player kill request for the current tank (if any)
 
-        self.agent_id = self.client.get_tank()
+        self.player_id = self.client.get_tank()
 
-        if self.agent_id is None:
+        if self.player_id is None:
             raise TankwarEnvException("Failed to receive a tank to control, quitting!")
 
         # Subscribe to images and rewards for the spawned player
         if self.render_mode is not None:
-            self.client.subscribe_to_observation(
-                self.agent_id, client.ObservationKind.IMAGE
-            )
+            self.client.subscribe(self.player_id, client.ObservationKind.IMAGE)
 
-        self.client.subscribe_to_observation(
-            self.agent_id, client.ObservationKind.REWARDS
-        )
+        self.client.subscribe(self.player_id, client.ObservationKind.REWARDS)
 
         observation = self._get_obs()
         info = self._get_info()
@@ -94,6 +105,8 @@ class TankwarEnv(gym.Env):
         return observation, info
 
     def step(self, action: dict[str, np.ndarray | Any]):
+        self.send_update_requests()
+
         tank_control = client.TankControlState(
             left_engine=float(action["left_engine"]),
             right_engine=float(action["right_engine"]),
@@ -104,20 +117,19 @@ class TankwarEnv(gym.Env):
             rotation_speed=float(action["turret_rotation"]),
         )
 
-        self.client.send_tank_controls(self.agent_id, tank_control)
+        self.client.send_tank_controls(self.player_id, tank_control)
 
-        if self.render_mode is not None:
-            self.client.request_observation(self.agent_id, client.ObservationKind.IMAGE)
+        player_state = self.client.entity_state(self.player_id)
 
-        agent_state = self.client.entity_state(self.agent_id)
-        turrets: list[client.Turret] = agent_state.get("turrets", [])
+        # Assuming player is a tank
+        turrets: list[client.Turret] = player_state.get("turrets", [])
 
         for turret in turrets:
             self.client.send_turret_controls(turret.turret_id, turret_controls)
 
         terminated = False
         truncated = False
-        reward = self.client.entity_state(self.agent_id).pop("reward", 0.0)
+        reward = self.client.entity_state(self.player_id).pop("reward", 0.0)
         observation = self._get_obs()
         info = self._get_info()
 
@@ -125,6 +137,22 @@ class TankwarEnv(gym.Env):
             self.render()
 
         return observation, reward, terminated, truncated, info
+
+    def send_update_requests(self):
+        if "ball_position" in self.observation_space.keys():
+            self.client.request_update(self.ball_id, client.ObservationKind.POSITION)
+
+        if "player_position" in self.observation_space.keys():
+            self.client.request_update(self.player_id, client.ObservationKind.POSITION)
+
+        if "player_rotation" in self.observation_space.keys():
+            self.client.request_update(self.player_id, client.ObservationKind.ROTATION)
+
+        if (
+            "player_pov" in self.observation_space.keys()
+            or self.render_mode is not None
+        ):
+            self.client.request_update(self.player_id, client.ObservationKind.IMAGE)
 
     def render(self):
         if self.render_mode == "rgb_array":
@@ -134,7 +162,7 @@ class TankwarEnv(gym.Env):
             image = self._get_image_array()
             # TODO: Switch to pygame for rendering
 
-            window_name = f"Player #{client.Entity(self.agent_id)}"
+            window_name = f"Player #{client.Entity(self.player_id)}"
             cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
             width, height, *_ = image.shape
@@ -156,7 +184,36 @@ class TankwarEnv(gym.Env):
         return super().close()
 
     def _get_obs(self):
-        return self._get_image_array()
+        obs = {}
+
+        if "player_pov" in self.observation_space.keys():
+            obs["player_pov"] = self._get_image_array()
+
+        obs.update(self._get_position("ball_position", self.ball_id))
+        obs.update(self._get_position("player_position", self.player_id))
+
+        if "player_rotation" in self.observation_space.keys():
+            player_rotation = self.client.entity_state(self.player_id).get(
+                "rotation_in_radians"
+            )
+            if player_rotation is None:
+                player_rotation = np.zeros_like(
+                    self.observation_space["player_rotation"].sample()
+                )
+
+            obs["player_rotation"] = player_rotation
+
+        return obs
+
+    def _get_position(self, obs_id, entity) -> dict[str, np.ndarray]:
+        if obs_id not in self.observation_space.keys():
+            return {}
+
+        position = self.client.entity_state(entity).get("position")
+        position = [0.0, 0.0] if position is None else [position.x, position.y]
+        space = self.observation_space[obs_id]
+
+        return {obs_id: np.array(position, dtype=space.dtype)}
 
     def _get_image_array(self) -> np.ndarray:
-        return self.client.entity_state(self.agent_id).get("image", self.no_signal_img)
+        return self.client.entity_state(self.player_id).get("image", self.no_signal_img)
