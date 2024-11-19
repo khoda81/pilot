@@ -9,6 +9,7 @@ import numpy as np
 from attr import dataclass
 
 from .protobuf.game_socket_pb2 import *
+from .session_storage import SessionStorage
 
 
 def decode_image(image_message):
@@ -58,7 +59,8 @@ class GameClient:
 
         # Tank-related state tracking
         # tank_id -> {'image': ..., 'reward': ..., 'sensors': ...}
-        self.entity_states = {}
+        self.storage = SessionStorage()
+        self.tank_turrets = {}
         self.balls = {}
         self.alive_tanks = set()
         self.dead_tanks = set()
@@ -72,10 +74,11 @@ class GameClient:
         self.receive_thread = None
         self.message_queue = queue.Queue()
 
-    def entity_state(self, entity: int) -> dict[str, Any]:
-        return self.entity_states.setdefault(entity, {})
+    # def entity_state(self, entity: int) -> dict[str, Any]:
+    #     return self.entity_states.setdefault(entity, {})
 
     def connect(self):
+        self.storage.__enter__()
         self.sock.connect(self.address)
         self.request_tank_list()
         self.request_ball_list()
@@ -98,6 +101,7 @@ class GameClient:
     def close(self):
         self.running = False
         self.sock.close()
+        self.storage.__exit__()
 
     def send_message(self, client_message: ClientMessage) -> None:
         serialized_message = client_message.SerializeToString()
@@ -158,7 +162,10 @@ class GameClient:
 
     def handle_tank_spawned(self, tank: Tank):
         self.alive_tanks.add(tank.tank_id)
-        self.entity_state(tank.tank_id)["turrets"] = tank.turrets
+
+        dtype = [("turret_id", np.uint64)]
+        turrets = np.asarray([turret.turret_id for turret in tank.turrets], dtype=dtype)
+        self.storage.metadata(tank.tank_id)["turrets"] = turrets
 
     def handle_tank_died(self, tank_id: int):
         self.dead_tanks.add(tank_id)
@@ -181,23 +188,39 @@ class GameClient:
         data_kind = update.WhichOneof("observation")
 
         if data_kind == "image":
-            self.entity_state(update.entity)[data_kind] = decode_image(update.image)
+            array = decode_image(update.image)
 
         elif data_kind == "reward":
-            entity_state = self.entity_state(update.entity)
-            accumulated_reward = entity_state.get(data_kind, 0.0)
-            entity_state[data_kind] = accumulated_reward + update.reward.reward
+            array = np.asarray(update.reward.reward, dtype=np.float64)
+
+        elif data_kind == "position":
+            array = np.asarray(
+                (update.position.x, update.position.y),
+                dtype=np.dtype([("x", np.float32), ("y", np.float32)]),
+            )
+
+        elif data_kind == "tank_controls":
+            array = np.asarray(
+                (update.tank_controls.right_engine, update.tank_controls.left_engine),
+                dtype=np.dtype(
+                    [("right_engine", np.float32), ("left_engine", np.float32)]
+                ),
+            )
+
+        elif data_kind == "turret_controls":
+            array = np.asarray(
+                (update.turret_controls.rotation_speed, update.turret_controls.count),
+                dtype=np.dtype([("rotation_speed", np.float32), ("count", np.int32)]),
+            )
+
+        elif data_kind == "rotation_in_radians":
+            array = np.asarray(update.rotation_in_radians, dtype=np.float32)
 
         else:
-            if data_kind not in [
-                "tank_controls",
-                "turret_controls",
-                "position",
-                "rotation_in_radians",
-            ]:
-                warn(f"Unexpected observation kind: {data_kind}")
+            warn(f"Unexpected observation kind: {data_kind}")
+            array = np.asarray(getattr(update, data_kind))
 
-            self.entity_state(update.entity)[data_kind] = getattr(update, data_kind)
+        self.storage.add_data(update.entity, data_kind, array, update.timestamp)
 
     # ---- Control Methods ----
 

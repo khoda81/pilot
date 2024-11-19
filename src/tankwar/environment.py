@@ -50,7 +50,11 @@ class TankwarEnv(gym.Env):
 
         from gymnasium.spaces import Box, Dict
 
-        position = Box(-np.inf, np.inf, shape=(2,), dtype=np.float32)
+        position = Dict(
+            x=Box(-np.inf, np.inf, dtype=np.float32),
+            y=Box(-np.inf, np.inf, dtype=np.float32),
+        )
+
         image = Box(0, 255, shape=(200, 200, 3), dtype=np.uint8)
 
         self.observation_space = Dict(
@@ -95,6 +99,7 @@ class TankwarEnv(gym.Env):
             self.client.subscribe(self.player_id, client.ObservationKind.IMAGE)
 
         self.client.subscribe(self.player_id, client.ObservationKind.REWARDS)
+        self.reward_index = 0
 
         observation = self._get_obs()
         info = self._get_info()
@@ -119,17 +124,25 @@ class TankwarEnv(gym.Env):
 
         self.client.send_tank_controls(self.player_id, tank_control)
 
-        player_state = self.client.entity_state(self.player_id)
+        player_state = self.client.storage.metadata(self.player_id)
 
         # Assuming player is a tank
         turrets: list[client.Turret] = player_state.get("turrets", [])
 
         for turret in turrets:
-            self.client.send_turret_controls(turret.turret_id, turret_controls)
+            self.client.send_turret_controls(turret["turret_id"], turret_controls)
+
+        try:
+            reward_updates = self.client.storage.get_dataset(self.player_id, "reward")
+            new_rewards = reward_updates[self.reward_index :]["reward"]
+            self.reward_index = len(reward_updates)
+            reward = new_rewards.sum()
+
+        except KeyError:
+            reward = 0.0
 
         terminated = False
         truncated = False
-        reward = self.client.entity_state(self.player_id).pop("reward", 0.0)
         observation = self._get_obs()
         info = self._get_info()
 
@@ -193,10 +206,12 @@ class TankwarEnv(gym.Env):
         obs.update(self._get_position("player_position", self.player_id))
 
         if "player_rotation" in self.observation_space.keys():
-            player_rotation = self.client.entity_state(self.player_id).get(
-                "rotation_in_radians"
-            )
-            if player_rotation is None:
+            try:
+                player_rotation = self.get_latest_value(
+                    self.player_id, "rotation_in_radians"
+                )
+
+            except KeyError:
                 player_rotation = np.zeros_like(
                     self.observation_space["player_rotation"].sample()
                 )
@@ -205,15 +220,29 @@ class TankwarEnv(gym.Env):
 
         return obs
 
+    def get_latest_value(self, entity: int, component: str):
+        return self.client.storage.get_dataset(entity, component)[-1][component]
+
     def _get_position(self, obs_id, entity) -> dict[str, np.ndarray]:
         if obs_id not in self.observation_space.keys():
             return {}
 
-        position = self.client.entity_state(entity).get("position")
-        position = [0.0, 0.0] if position is None else [position.x, position.y]
-        space = self.observation_space[obs_id]
+        try:
+            position = self.get_latest_value(entity, "position")
+            position = {"x": position["x"], "y": position["y"]}
 
-        return {obs_id: np.array(position, dtype=space.dtype)}
+        except KeyError:
+            space = self.observation_space[obs_id]
+            position = {
+                "x": np.asarray(0.0, dtype=space["x"].dtype),
+                "y": np.asarray(0.0, dtype=space["y"].dtype),
+            }
+
+        return {obs_id: position}
 
     def _get_image_array(self) -> np.ndarray:
-        return self.client.entity_state(self.player_id).get("image", self.no_signal_img)
+        try:
+            return self.get_latest_value(self.player_id, "image")
+
+        except KeyError:
+            return self.no_signal_img
