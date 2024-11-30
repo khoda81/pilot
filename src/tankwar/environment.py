@@ -124,7 +124,7 @@ class TankwarEnv(gym.Env):
 
         self.client.send_tank_controls(self.player_id, tank_control)
 
-        player_state = self.client.storage.metadata(self.player_id)
+        player_state = self.client.storage.entity_data(self.player_id)
 
         # Assuming player is a tank
         turrets: list[client.Turret] = player_state.get("turrets", [])
@@ -133,7 +133,7 @@ class TankwarEnv(gym.Env):
             self.client.send_turret_controls(turret["turret_id"], turret_controls)
 
         try:
-            reward_updates = self.client.storage.get_dataset(self.player_id, "reward")
+            reward_updates = self.client.storage.get_table(self.player_id, "reward")
             new_rewards = reward_updates[self.reward_index :]["reward"]
             self.reward_index = len(reward_updates)
             reward = new_rewards.sum()
@@ -221,7 +221,7 @@ class TankwarEnv(gym.Env):
         return obs
 
     def get_latest_value(self, entity: int, component: str):
-        return self.client.storage.get_dataset(entity, component)[-1][component]
+        return self.client.storage.get_table(entity, component)[-1][component]
 
     def _get_position(self, obs_id, entity) -> dict[str, np.ndarray]:
         if obs_id not in self.observation_space.keys():

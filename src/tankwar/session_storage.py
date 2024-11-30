@@ -1,3 +1,4 @@
+import base64
 import logging
 import os
 
@@ -6,7 +7,7 @@ import numpy as np
 
 # Set up logger
 logger = logging.getLogger("SessionStorage")
-# logger.setLevel(logging.INFO)  # Uncomment to enable logging
+logger.setLevel(logging.DEBUG)  # Uncomment to enable logging
 
 
 class SessionStorage:
@@ -22,17 +23,17 @@ class SessionStorage:
         self.file: h5py.File | None = None
 
     def __enter__(self) -> "SessionStorage":
-        self._open_file()
+        self.open()
         return self
 
     def __exit__(self, *args) -> None:
-        self._close_file()
+        self.close()
 
     def _generate_unique_filename(self) -> str:
         # Generates a unique file name
         return f"session_{os.urandom(4).hex()}.hdf5"
 
-    def _open_file(self) -> None:
+    def open(self) -> None:
         try:
             self.file = h5py.File(self.file_path, "a")
             logger.info(f"Opened file {self.file_path}")
@@ -41,26 +42,27 @@ class SessionStorage:
             logger.error(f"Failed to open file {self.file_path}: {e}")
             raise
 
-    def _close_file(self) -> None:
+    def close(self) -> None:
         if self.file is not None:
-            self.file.close()
-            self.file.__exit__()
-            self.file = None
+            self.file = self.file.__exit__()
             logger.info(f"Closed file {self.file_path}")
 
-    def get_dataset(self, entity: int, component: str) -> h5py.Dataset:
+    def entities_with(self, component: str):
         if self.file is None:
             raise RuntimeError("File is not opened.")
 
+        return self.file.require_group(component)
+
+    def get_table(self, entity: int, component: str) -> h5py.Dataset:
+        component_group = self.entities_with(component)
+
         try:
-            component_group = self.file.require_group(component)
-            return component_group[self.to_bytes64(entity)]
+            return component_group[self._entity_to_id(entity)]
 
         except KeyError:
-            logger.warning(f"Dataset {entity}/{component} not found.")
-            raise KeyError("The requested entity/component does not exist.")
+            raise KeyError(f"Dataset {entity}/{component} not found.")
 
-    def add_data(
+    def add_row(
         self,
         entity: int,
         component: str,
@@ -80,7 +82,7 @@ class SessionStorage:
         )
 
         component_group = self.file.require_group(component)
-        entity_id = self.to_bytes64(entity)
+        entity_id = self._entity_to_id(entity)
 
         if component == "image":
             # Enable level 4 gzip compression for dataset
@@ -100,10 +102,15 @@ class SessionStorage:
         dataset[-1] = data_point
         logger.debug(f"Appended data to {entity}/{component}")
 
-    def metadata(self, entity: int) -> h5py.AttributeManager:
-        entity_id = self.to_bytes64(entity)
-        entity_group = self.file.require_group(entity_id)
-        return entity_group.attrs
+    def entity_data(self, entity: int) -> h5py.AttributeManager:
+        group = self.file.require_group("entities")
+        entity_id = self._entity_to_id(entity)
+        return group.require_group(entity_id).attrs
 
-    def to_bytes64(self, entity: int):
-        return entity.to_bytes(8, "little")
+    def _entity_to_id(self, entity: int) -> bytes:
+        byte_rep = entity.to_bytes(8, "little")
+        return base64.b64encode(byte_rep).decode("utf-8")
+
+    def id_to_entity(entity_id: bytes) -> int:
+        decoded_bytes = base64.b64decode(entity_id)
+        return int.from_bytes(decoded_bytes, "little")

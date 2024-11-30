@@ -165,7 +165,7 @@ class GameClient:
 
         dtype = [("turret_id", np.uint64)]
         turrets = np.asarray([turret.turret_id for turret in tank.turrets], dtype=dtype)
-        self.storage.metadata(tank.tank_id)["turrets"] = turrets
+        self.storage.entity_data(tank.tank_id)["turrets"] = turrets
 
     def handle_tank_died(self, tank_id: int):
         self.dead_tanks.add(tank_id)
@@ -220,7 +220,7 @@ class GameClient:
             warn(f"Unexpected observation kind: {data_kind}")
             array = np.asarray(getattr(update, data_kind))
 
-        self.storage.add_data(update.entity, data_kind, array, update.timestamp)
+        self.storage.add_row(update.entity, data_kind, array, update.timestamp)
 
     # ---- Control Methods ----
 
