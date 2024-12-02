@@ -59,7 +59,7 @@ class GameClient:
 
         # Tank-related state tracking
         # tank_id -> {'image': ..., 'reward': ..., 'sensors': ...}
-        self.storage = SessionStorage()
+        self.storage = SessionStorage(mode="a")
         self.tank_turrets = {}
         self.balls = {}
         self.alive_tanks = set()
@@ -74,11 +74,8 @@ class GameClient:
         self.receive_thread = None
         self.message_queue = queue.Queue()
 
-    # def entity_state(self, entity: int) -> dict[str, Any]:
-    #     return self.entity_states.setdefault(entity, {})
-
     def connect(self):
-        self.storage.__enter__()
+        self.storage.open()
         self.sock.connect(self.address)
         self.request_tank_list()
         self.request_ball_list()

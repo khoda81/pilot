@@ -11,7 +11,12 @@ logger.setLevel(logging.DEBUG)  # Uncomment to enable logging
 
 
 class SessionStorage:
-    def __init__(self, file_name: str | None = None, dir: str = "dataset/sessions"):
+    def __init__(
+        self,
+        file_name: str | None = None,
+        dir: str = "dataset/sessions",
+        mode="r",
+    ):
         # Ensure the directory exists
         os.makedirs(dir, exist_ok=True)
 
@@ -21,6 +26,7 @@ class SessionStorage:
         # Set the full file path for the session storage
         self.file_path = os.path.join(dir, file_name)
         self.file: h5py.File | None = None
+        self.mode = mode
 
     def __enter__(self) -> "SessionStorage":
         self.open()
@@ -35,7 +41,7 @@ class SessionStorage:
 
     def open(self) -> None:
         try:
-            self.file = h5py.File(self.file_path, "a")
+            self.file = h5py.File(self.file_path, mode=self.mode)
             logger.info(f"Opened file {self.file_path}")
 
         except IOError as e:
